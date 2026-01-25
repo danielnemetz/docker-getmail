@@ -1,0 +1,22 @@
+services:
+  email-fetcher:
+    build: .
+    image: email-fetcher
+    container_name: email-fetcher
+    volumes:
+      - ./accounts.list:/app/accounts.list
+      - getmail-data:/home/getmail/.getmail # Use named volume to let Docker manage permissions
+
+    networks:
+      - mailcow-network
+    restart: unless-stopped
+    environment:
+      - FETCH_INTERVAL=300 # Seconds
+      - DELETE_AFTER_DAYS=7 # Days to leave mail on server
+
+volumes:
+  getmail-data:
+networks:
+  mailcow-network:
+    external: true
+    name: mailcowdockerized_mailcow-network

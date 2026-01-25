@@ -1,0 +1,12 @@
+# User configuration with secrets
+accounts.list
+
+# Persistent data directory
+getmail_data/
+
+# Python
+__pycache__/
+*.pyc
+
+# Mac/System
+.DS_Store

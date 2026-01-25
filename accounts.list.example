@@ -1,0 +1,6 @@
+# Struktur: E-Mail : "Passwort" : IMAP-Host : Mailcow-Zieladresse
+# Wichtig: Das Passwort muss in Anführungszeichen stehen!
+# user: "password" : source_host : local_target_email
+
+beispiel@ionos.de:"MeinGeheimesPW":imap.ionos.de:ziel@meine-domain.de
+user2@yahoo.com:"AppPasswort123":imap.mail.yahoo.com:ziel@meine-domain.de
