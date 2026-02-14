@@ -8,6 +8,8 @@ import shutil
 import re
 import time
 import datetime
+import urllib.request
+import urllib.error
 
 # Configuration defaults
 ACCOUNTS_FILE = "/app/accounts.list"
@@ -21,6 +23,27 @@ try:
 except ValueError:
     print("Warning: Invalid DELETE_AFTER_DAYS, defaulting to 7.")
     DEFAULT_DELETE_AFTER_DAYS = 7
+
+# Success Hook URL from environment
+SUCCESS_HOOK_URL = os.environ.get('SUCCESS_HOOK_URL')
+
+def call_webhook(url):
+    """
+    Calls the specified webhook URL via HTTP GET.
+    """
+    if not url:
+        return
+
+    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Calling success webhook: {url}")
+    try:
+        # Using a simple GET request as per requirements
+        with urllib.request.urlopen(url, timeout=10) as response:
+            status = response.getcode()
+            print(f"  -> Webhook response status: {status}")
+    except urllib.error.URLError as e:
+        print(f"  -> Webhook failed: {e}")
+    except Exception as e:
+        print(f"  -> An unexpected error occurred during webhook call: {e}")
 
 def parse_accounts(filepath):
     """
@@ -221,6 +244,10 @@ def main():
             
             for acc in current_accounts:
                 run_fetch(acc)
+            
+            # Call webhook after all accounts are processed
+            if SUCCESS_HOOK_URL:
+                call_webhook(SUCCESS_HOOK_URL)
             
             print(f"Sleeping for {args.interval} seconds...\n")
             time.sleep(args.interval)

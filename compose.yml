@@ -11,8 +11,9 @@ services:
       - mailcow-network
     restart: unless-stopped
     environment:
-      - FETCH_INTERVAL=300 # Seconds
-      - DELETE_AFTER_DAYS=7 # Days to leave mail on server
+      - FETCH_INTERVAL=${FETCH_INTERVAL} # Seconds
+      - DELETE_AFTER_DAYS=${DELETE_AFTER_DAYS} # Days to leave mail on server
+      - SUCCESS_HOOK_URL=${SUCCESS_HOOK_URL}
 
 volumes:
   getmail-data:
