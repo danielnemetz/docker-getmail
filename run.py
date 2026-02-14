@@ -132,7 +132,7 @@ def configure_msmtp():
     Creates a global msmtp configuration to relay through the mailcow postfix.
     Assumes the container is in the proper network and can reach 'postfix-mailcow'.
     """
-    msmtp_config = """defaults
+    msmtp_config = f"""defaults
 auth           off
 tls            off
 tls_trust_file /etc/ssl/certs/ca-certificates.crt
