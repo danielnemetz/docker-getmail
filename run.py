@@ -28,8 +28,8 @@ except ValueError:
 SUCCESS_HOOK_URL = os.environ.get('SUCCESS_HOOK_URL')
 
 # Sender Email for SMTP (msmtp)
-# Default to a generic address to avoid 'local domain' spoofing checks in Mailcow
-SENDER_EMAIL = os.environ.get('SENDER_EMAIL', 'getmail@mailcow-fetcher.local')
+# Default to a neutral address to avoid 'local domain' spoofing checks in Mailcow
+SENDER_EMAIL = os.environ.get('SENDER_EMAIL', 'getmail-fetcher@mailcow.local')
 
 # Print configuration on startup for debugging
 print(f"--- Configuration ---")
@@ -244,7 +244,10 @@ def run_fetch(account):
         # Using check=True to raise exception on error
         subprocess.run(cmd, check=True)
     except subprocess.CalledProcessError as e:
-        print(f"Error running getmail for {account['user']}: {e}")
+        if e.returncode == 127:
+            print(f"Error: getmail for {account['user']} exited with 127. This usually means the MDA (msmtp) was not found or failed critically.")
+        else:
+            print(f"Error running getmail for {account['user']}: {e}")
 
 def main():
     parser = argparse.ArgumentParser(description="Email Fetcher Wrapper")
