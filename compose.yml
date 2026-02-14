@@ -9,6 +9,8 @@ services:
 
     networks:
       - mailcow-network
+    dns:
+      - ${DNS_SERVER:-1.1.1.1}
     restart: unless-stopped
     environment:
       - FETCH_INTERVAL=${FETCH_INTERVAL} # Seconds

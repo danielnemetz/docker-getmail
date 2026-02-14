@@ -38,22 +38,30 @@ LMTP_PORT = int(os.environ.get('LMTP_PORT', 24))
 DRY_DELIVER = os.environ.get('DRY_DELIVER', '').lower() in ('1', 'true', 'yes')
 
 
-def call_webhook(url):
+def call_webhook(url, max_retries=3):
     """
     Calls the specified webhook URL via HTTP GET.
+    Retries with exponential backoff on DNS/network failures (common after host reboot).
     """
     if not url:
         return
 
-    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Calling success webhook: {url}")
-    try:
-        with urllib.request.urlopen(url, timeout=10) as response:
-            status = response.getcode()
-            print(f"  -> Webhook response status: {status}")
-    except urllib.error.URLError as e:
-        print(f"  -> Webhook failed: {e}")
-    except Exception as e:
-        print(f"  -> An unexpected error occurred during webhook call: {e}")
+    for attempt in range(1, max_retries + 1):
+        print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Calling success webhook: {url} (attempt {attempt}/{max_retries})")
+        try:
+            with urllib.request.urlopen(url, timeout=10) as response:
+                status = response.getcode()
+                print(f"  -> Webhook response status: {status}")
+                return  # Success, exit
+        except urllib.error.URLError as e:
+            print(f"  -> Webhook failed: {e}")
+            if attempt < max_retries:
+                wait = 5 * (2 ** (attempt - 1))  # 5s, 10s, 20s
+                print(f"  -> Retrying in {wait}s...")
+                time.sleep(wait)
+        except Exception as e:
+            print(f"  -> An unexpected error occurred during webhook call: {e}")
+            return  # Don't retry on unexpected errors
 
 
 def deliver_lmtp(recipient):
