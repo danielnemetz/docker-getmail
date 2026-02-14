@@ -216,8 +216,27 @@ def run_fetch(account):
     # Note: Generating config every time allows changes in accounts.list to apply without container rebuild
     generate_getmail_config(account, config_path)
 
-    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [{account['user']}] Starting fetch...")
+    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [{account['user']}] Starting fetch for account {account['user']}...")
     
+    # Debug: Check if msmtp exists
+    msmtp_path = "/usr/bin/msmtp"
+    if not os.path.exists(msmtp_path):
+        print(f"CRITICAL ERROR: {msmtp_path} not found inside container!")
+        # Try to find it
+        alt_path = shutil.which("msmtp")
+        print(f"shutil.which('msmtp') says: {alt_path}")
+    
+    # Debug: Print generated config content (be careful with passwords, but here we need to see it)
+    print(f"--- Generated Config ({config_name}) ---")
+    with open(config_path, 'r') as f:
+        # Hide password in logs for safety, but show the rest
+        for line in f:
+            if "password =" in line:
+                print("password = ********")
+            else:
+                print(line.strip())
+    print(f"------------------------------------------")
+
     cmd = ["getmail", f"--getmaildir={GETMAIL_DIR}", f"--rcfile={config_name}"]
     
     try:
