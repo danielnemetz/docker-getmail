@@ -28,7 +28,15 @@ except ValueError:
 SUCCESS_HOOK_URL = os.environ.get('SUCCESS_HOOK_URL')
 
 # Sender Email for SMTP (msmtp)
-SENDER_EMAIL = os.environ.get('SENDER_EMAIL', 'getmail-fetcher@localhost')
+SENDER_EMAIL = os.environ.get('SENDER_EMAIL', 'getmail-fetcher@local.host')
+
+# Print configuration on startup for debugging
+print(f"--- Configuration ---")
+print(f"ACCOUNTS_FILE: {ACCOUNTS_FILE}")
+print(f"SUCCESS_HOOK_URL: {'Set' if SUCCESS_HOOK_URL else 'Not set'}")
+print(f"SENDER_EMAIL: {SENDER_EMAIL}")
+print(f"FETCH_INTERVAL: {os.environ.get('FETCH_INTERVAL', DEFAULT_FETCH_INTERVAL)}")
+print(f"---------------------")
 
 def call_webhook(url):
     """
