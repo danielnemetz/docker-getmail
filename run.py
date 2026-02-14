@@ -8,13 +8,16 @@ import shutil
 import re
 import time
 import datetime
+import smtplib
 import urllib.request
 import urllib.error
 
 # Configuration defaults
 ACCOUNTS_FILE = "/app/accounts.list"
 # Use user's home directory for getmail state to avoid permission issues
+# In DRY_DELIVER mode, use a separate directory so real state is not polluted
 GETMAIL_DIR = os.path.expanduser("~/.getmail")
+GETMAIL_DIR_DRY = os.path.expanduser("~/.getmail-dry")
 DEFAULT_FETCH_INTERVAL = 300 # 5 minutes
 
 # Get retention policy from environment or default to 7 days
@@ -27,17 +30,13 @@ except ValueError:
 # Success Hook URL from environment
 SUCCESS_HOOK_URL = os.environ.get('SUCCESS_HOOK_URL')
 
-# Sender Email for SMTP (msmtp)
-# Default to a neutral address to avoid 'local domain' spoofing checks in Mailcow
-SENDER_EMAIL = os.environ.get('SENDER_EMAIL', 'getmail-fetcher@mailcow.local')
+# LMTP Configuration
+LMTP_HOST = os.environ.get('LMTP_HOST', 'dovecot-mailcow')
+LMTP_PORT = int(os.environ.get('LMTP_PORT', 24))
 
-# Print configuration on startup for debugging
-print(f"--- Configuration ---")
-print(f"ACCOUNTS_FILE: {ACCOUNTS_FILE}")
-print(f"SUCCESS_HOOK_URL: {'Set' if SUCCESS_HOOK_URL else 'Not set'}")
-print(f"SENDER_EMAIL: {SENDER_EMAIL}")
-print(f"FETCH_INTERVAL: {os.environ.get('FETCH_INTERVAL', DEFAULT_FETCH_INTERVAL)}")
-print(f"---------------------")
+# Dry delivery mode: fetch mails but don't actually deliver them
+DRY_DELIVER = os.environ.get('DRY_DELIVER', '').lower() in ('1', 'true', 'yes')
+
 
 def call_webhook(url):
     """
@@ -48,7 +47,6 @@ def call_webhook(url):
 
     print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Calling success webhook: {url}")
     try:
-        # Using a simple GET request as per requirements
         with urllib.request.urlopen(url, timeout=10) as response:
             status = response.getcode()
             print(f"  -> Webhook response status: {status}")
@@ -56,6 +54,31 @@ def call_webhook(url):
         print(f"  -> Webhook failed: {e}")
     except Exception as e:
         print(f"  -> An unexpected error occurred during webhook call: {e}")
+
+
+def deliver_lmtp(recipient):
+    """
+    Reads an email from stdin and delivers it via LMTP to dovecot.
+    This function is called by getmail as an MDA (Mail Delivery Agent).
+    """
+    msg_data = sys.stdin.buffer.read()
+
+    if DRY_DELIVER:
+        print(f"[DRY] Would deliver {len(msg_data)} bytes to {recipient} via LMTP ({LMTP_HOST}:{LMTP_PORT})", file=sys.stderr)
+        return
+
+    try:
+        lmtp = smtplib.LMTP(LMTP_HOST, LMTP_PORT)
+        lmtp.sendmail(
+            from_addr="getmail-fetcher@localhost",
+            to_addrs=[recipient],
+            msg=msg_data
+        )
+        lmtp.quit()
+    except Exception as e:
+        print(f"LMTP delivery error to {recipient}: {e}", file=sys.stderr)
+        sys.exit(1)
+
 
 def parse_accounts(filepath):
     """
@@ -87,6 +110,7 @@ def parse_accounts(filepath):
                 print(f"Warning: Could not parse line strictly, skipping: {line}")
     return accounts
 
+
 def detect_protocol(server_address):
     """
     Simple heuristic to guess protocol.
@@ -96,6 +120,7 @@ def detect_protocol(server_address):
     if 'pop' in server_address.lower():
         return 'POP3_SSL'
     return 'IMAP4_SSL'
+
 
 def dry_run_check(account):
     """
@@ -121,7 +146,6 @@ def dry_run_check(account):
                     print("  -> Failed to search INBOX.")
         
         elif protocol == 'POP3_SSL':
-            # POP3 doesn't have folders usually, just one inbox
             mail = None
             try:
                 mail = poplib.POP3_SSL(server)
@@ -136,35 +160,11 @@ def dry_run_check(account):
     except Exception as e:
         print(f"  -> Connection Failed: {e}")
 
-def configure_msmtp():
-    """
-    Creates a global msmtp configuration to relay through the mailcow postfix.
-    Assumes the container is in the proper network and can reach 'postfix-mailcow'.
-    """
-    msmtp_config = f"""defaults
-auth           off
-tls            off
-tls_trust_file /etc/ssl/certs/ca-certificates.crt
-# Log to stderr so docker can capture it without file permission issues
-logfile        /dev/stderr
-
-account        default
-host           postfix-mailcow
-port           25
-from           {SENDER_EMAIL}
-"""
-    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Writing msmtp config with SENDER_EMAIL={SENDER_EMAIL}")
-    # Write to user config ~/.msmtprc (since we are non-root now)
-    config_path = os.path.expanduser("~/.msmtprc")
-    with open(config_path, 'w') as f:
-        f.write(msmtp_config)
-    
-    # Secure the file (msmtp complains if permissions are too open)
-    os.chmod(config_path, 0o600)
 
 def generate_getmail_config(account, config_path):
     """
     Generates a getmailrc file for the account.
+    Uses run.py itself as the MDA to deliver via LMTP to Dovecot.
     """
     protocol = detect_protocol(account['server'])
     
@@ -176,7 +176,7 @@ def generate_getmail_config(account, config_path):
     else:
         retriever_type = 'SimpleIMAPSSLRetriever' # Default
 
-    # Destination uses MDA_external to call msmtp
+    # Destination uses MDA_external to call this script in LMTP delivery mode
     config_content = f"""[retriever]
 type = {retriever_type}
 server = {account['server']}
@@ -185,8 +185,8 @@ password = {account['password']}
 
 [destination]
 type = MDA_external
-path = /usr/bin/msmtp
-arguments = ("-a", "default", "-f", "{SENDER_EMAIL}", "{account['target']}")
+path = /usr/local/bin/python3
+arguments = ("/app/run.py", "--deliver-lmtp", "{account['target']}")
 ignore_stderr = true
 
 [options]
@@ -200,80 +200,73 @@ message_log = /home/getmail/.getmail/getmail.log
     with open(config_path, 'w') as f:
         f.write(config_content)
 
+
 def run_fetch(account):
     """
     Runs getmail for the specified account.
     """
+    # Use separate state directory in dry mode to avoid marking mails as seen
+    active_dir = GETMAIL_DIR_DRY if DRY_DELIVER else GETMAIL_DIR
+
     # Clean non-fs characters
     safe_user = re.sub(r'[^a-zA-Z0-9]', '_', account['user'])
     safe_server = re.sub(r'[^a-zA-Z0-9]', '_', account['server'])
     config_name = f"getmailrc_{safe_user}_{safe_server}"
-    config_path = os.path.join(GETMAIL_DIR, config_name)
+    config_path = os.path.join(active_dir, config_name)
     
     # Ensure getmail dir exists
-    os.makedirs(GETMAIL_DIR, exist_ok=True)
+    os.makedirs(active_dir, exist_ok=True)
 
     # Note: Generating config every time allows changes in accounts.list to apply without container rebuild
     generate_getmail_config(account, config_path)
 
-    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [{account['user']}] Starting fetch for account {account['user']}...")
+    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [{account['user']}] Starting fetch...")
     
-    # Debug: Check if msmtp exists
-    msmtp_path = "/usr/bin/msmtp"
-    if not os.path.exists(msmtp_path):
-        print(f"CRITICAL ERROR: {msmtp_path} not found inside container!")
-        # Try to find it
-        alt_path = shutil.which("msmtp")
-        print(f"shutil.which('msmtp') says: {alt_path}")
-    
-    # Debug: Print generated config content (be careful with passwords, but here we need to see it)
-    print(f"--- Generated Config ({config_name}) ---")
-    with open(config_path, 'r') as f:
-        # Hide password in logs for safety, but show the rest
-        for line in f:
-            if "password =" in line:
-                print("password = ********")
-            else:
-                print(line.strip())
-    print(f"------------------------------------------")
-
-    cmd = ["getmail", f"--getmaildir={GETMAIL_DIR}", f"--rcfile={config_name}"]
+    cmd = ["getmail", f"--getmaildir={active_dir}", f"--rcfile={config_name}"]
     
     try:
-        # Capture output to avoid log spam unless error? Or verbose?
-        # Using check=True to raise exception on error
         subprocess.run(cmd, check=True)
     except subprocess.CalledProcessError as e:
-        if e.returncode == 127:
-            print(f"Error: getmail for {account['user']} exited with 127. This usually means the MDA (msmtp) was not found or failed critically.")
-        else:
-            print(f"Error running getmail for {account['user']}: {e}")
+        print(f"Error running getmail for {account['user']}: exit code {e.returncode}")
+
 
 def main():
     parser = argparse.ArgumentParser(description="Email Fetcher Wrapper")
     parser.add_argument('--dry-run', action='store_true', help="Check connections and counts without fetching.")
     parser.add_argument('--accounts', type=str, default=ACCOUNTS_FILE, help="Path to accounts.list")
     parser.add_argument('--interval', type=int, default=int(os.environ.get('FETCH_INTERVAL', DEFAULT_FETCH_INTERVAL)), help="Fetch interval in seconds (Daemon mode only)")
+    parser.add_argument('--deliver-lmtp', type=str, metavar='RECIPIENT', help="MDA mode: Read email from stdin and deliver via LMTP to the given recipient.")
     
     args = parser.parse_args()
 
-    print("Parsing accounts...")
-    accounts = parse_accounts(args.accounts)
-    print(f"Found {len(accounts)} accounts.")
+    # MDA mode: deliver a single email via LMTP and exit
+    if args.deliver_lmtp:
+        deliver_lmtp(args.deliver_lmtp)
+        return
+
+    print(f"--- Configuration ---")
+    print(f"LMTP_HOST: {LMTP_HOST}")
+    print(f"LMTP_PORT: {LMTP_PORT}")
+    print(f"DRY_DELIVER: {DRY_DELIVER}")
+    print(f"SUCCESS_HOOK_URL: {'Set' if SUCCESS_HOOK_URL else 'Not set'}")
+    print(f"FETCH_INTERVAL: {os.environ.get('FETCH_INTERVAL', DEFAULT_FETCH_INTERVAL)}")
+    print(f"DELETE_AFTER_DAYS: {DEFAULT_DELETE_AFTER_DAYS}")
+    print(f"---------------------")
+
+    if DRY_DELIVER:
+        print("\n⚠️  DRY DELIVER MODE: Mails will be fetched but NOT delivered to mailboxes!")
 
     if args.dry_run:
         print("\n--- DRY RUN MODE: Checking Stats Only ---")
-        for acc in accounts:
+        for acc in parse_accounts(args.accounts):
             dry_run_check(acc)
     else:
         # Daemon Mode
-        configure_msmtp()
         print(f"\n--- FETCH MODE STARTING ---")
         print(f"Interval: {args.interval} seconds")
         
         while True:
             # Re-parse accounts every loop to allow dynamic updates without restart
-            # (Optional improvement: check file mod time)
             current_accounts = parse_accounts(args.accounts)
             
             for acc in current_accounts:
@@ -285,6 +278,7 @@ def main():
             
             print(f"Sleeping for {args.interval} seconds...\n")
             time.sleep(args.interval)
+
 
 if __name__ == "__main__":
     main()
