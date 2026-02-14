@@ -28,7 +28,8 @@ except ValueError:
 SUCCESS_HOOK_URL = os.environ.get('SUCCESS_HOOK_URL')
 
 # Sender Email for SMTP (msmtp)
-SENDER_EMAIL = os.environ.get('SENDER_EMAIL', 'getmail-fetcher@local.host')
+# Default to a generic address to avoid 'local domain' spoofing checks in Mailcow
+SENDER_EMAIL = os.environ.get('SENDER_EMAIL', 'getmail@mailcow-fetcher.local')
 
 # Print configuration on startup for debugging
 print(f"--- Configuration ---")
@@ -152,6 +153,7 @@ host           postfix-mailcow
 port           25
 from           {SENDER_EMAIL}
 """
+    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Writing msmtp config with SENDER_EMAIL={SENDER_EMAIL}")
     # Write to user config ~/.msmtprc (since we are non-root now)
     config_path = os.path.expanduser("~/.msmtprc")
     with open(config_path, 'w') as f:
@@ -184,7 +186,7 @@ password = {account['password']}
 [destination]
 type = MDA_external
 path = /usr/bin/msmtp
-arguments = ("-a", "default", "{account['target']}")
+arguments = ("-a", "default", "-f", "{SENDER_EMAIL}", "{account['target']}")
 ignore_stderr = true
 
 [options]

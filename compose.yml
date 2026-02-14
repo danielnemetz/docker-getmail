@@ -14,7 +14,7 @@ services:
       - FETCH_INTERVAL=${FETCH_INTERVAL} # Seconds
       - DELETE_AFTER_DAYS=${DELETE_AFTER_DAYS} # Days to leave mail on server
       - SUCCESS_HOOK_URL=${SUCCESS_HOOK_URL}
-      - SENDER_EMAIL=${SENDER_EMAIL:-getmail@local.host}
+      - SENDER_EMAIL=${SENDER_EMAIL:-getmail@mailcow-fetcher.local}
 
 volumes:
   getmail-data:
