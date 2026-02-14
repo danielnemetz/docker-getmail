@@ -252,17 +252,10 @@ def main():
         deliver_lmtp(args.deliver_lmtp)
         return
 
-    print(f"--- Configuration ---")
-    print(f"LMTP_HOST: {LMTP_HOST}")
-    print(f"LMTP_PORT: {LMTP_PORT}")
-    print(f"DRY_DELIVER: {DRY_DELIVER}")
-    print(f"SUCCESS_HOOK_URL: {'Set' if SUCCESS_HOOK_URL else 'Not set'}")
-    print(f"FETCH_INTERVAL: {os.environ.get('FETCH_INTERVAL', DEFAULT_FETCH_INTERVAL)}")
-    print(f"DELETE_AFTER_DAYS: {DEFAULT_DELETE_AFTER_DAYS}")
-    print(f"---------------------")
+    print(f"email-fetcher starting (LMTP={LMTP_HOST}:{LMTP_PORT}, interval={os.environ.get('FETCH_INTERVAL', DEFAULT_FETCH_INTERVAL)}s, delete_after={DEFAULT_DELETE_AFTER_DAYS}d)")
 
     if DRY_DELIVER:
-        print("\n⚠️  DRY DELIVER MODE: Mails will be fetched but NOT delivered to mailboxes!")
+        print("⚠️  DRY DELIVER MODE: Mails will be fetched but NOT delivered!")
 
     if args.dry_run:
         print("\n--- DRY RUN MODE: Checking Stats Only ---")
