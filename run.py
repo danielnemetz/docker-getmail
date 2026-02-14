@@ -27,6 +27,9 @@ except ValueError:
 # Success Hook URL from environment
 SUCCESS_HOOK_URL = os.environ.get('SUCCESS_HOOK_URL')
 
+# Sender Email for SMTP (msmtp)
+SENDER_EMAIL = os.environ.get('SENDER_EMAIL', 'getmail-fetcher@localhost')
+
 def call_webhook(url):
     """
     Calls the specified webhook URL via HTTP GET.
@@ -139,7 +142,7 @@ logfile        /dev/stderr
 account        default
 host           postfix-mailcow
 port           25
-from           getmail-fetcher@localhost
+from           {SENDER_EMAIL}
 """
     # Write to user config ~/.msmtprc (since we are non-root now)
     config_path = os.path.expanduser("~/.msmtprc")
@@ -174,7 +177,6 @@ password = {account['password']}
 type = MDA_external
 path = /usr/bin/msmtp
 arguments = ("-a", "default", "{account['target']}")
-user = getmail
 ignore_stderr = true
 
 [options]
